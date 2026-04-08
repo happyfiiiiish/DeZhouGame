@@ -16,15 +16,15 @@ test("shuffleDeck keeps all original cards", () => {
   assert.deepEqual([...shuffled].sort(), [...deck].sort());
 });
 
-test("evaluateSevenCardHand detects a royal flush", () => {
+test("evaluateSevenCardHand detects a straight flush", () => {
   const result = evaluateSevenCardHand(["AS", "KS", "QS", "JS", "TS", "2D", "3C"]);
-  assert.equal(result.name, "皇家同花顺");
+  assert.equal(result.category, 8);
   assert.deepEqual(result.bestCards, ["AS", "KS", "QS", "JS", "TS"]);
 });
 
 test("evaluateSevenCardHand detects wheel straight", () => {
   const result = evaluateSevenCardHand(["AS", "2H", "3D", "4C", "5S", "KD", "QH"]);
-  assert.equal(result.name, "顺子");
+  assert.equal(result.category, 4);
   assert.deepEqual(result.tiebreak, [5]);
 });
 
@@ -36,6 +36,6 @@ test("compareHandStrength compares kickers when both players have a pair", () =>
 
 test("evaluateSevenCardHand prefers the strongest five-card combination from the board", () => {
   const result = evaluateSevenCardHand(["2S", "2D", "AH", "KH", "QH", "JH", "TH"]);
-  assert.equal(result.name, "皇家同花顺");
+  assert.equal(result.category, 8);
   assert.deepEqual(result.bestCards, ["AH", "KH", "QH", "JH", "TH"]);
 });

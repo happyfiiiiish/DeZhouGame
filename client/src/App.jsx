@@ -18,6 +18,41 @@ const SUIT_META = {
   D: { symbol: "♦", className: "is-red" },
 };
 
+const DEFAULT_GAME_STATE = {
+  phase: "waiting",
+  board: [],
+  selfHoleCards: [],
+  opponentCardCount: 0,
+  revealedOpponentHoleCards: [],
+  selfStack: 0,
+  opponentStack: 0,
+  pot: 0,
+  carryoverPot: 0,
+  dealerSeat: 0,
+  smallBlindSeat: 0,
+  bigBlindSeat: 1,
+  currentTurnSeat: null,
+  currentBet: 0,
+  selfStreetContribution: 0,
+  opponentStreetContribution: 0,
+  selfCallAmount: 0,
+  minRaiseTo: 0,
+  maxRaiseTo: 0,
+  handNumber: 0,
+  matchStatus: "active",
+  foldedSeat: null,
+  resolution: null,
+  showdownResults: null,
+  actions: {
+    canStartHand: false,
+    canRevealNext: false,
+    canRaise: false,
+    canCall: false,
+    canFold: false,
+    canResetMatch: false,
+  },
+};
+
 function getCardDisplay(cardCode) {
   if (!cardCode) {
     return { rank: "", suit: "", className: "is-black" };
@@ -34,32 +69,20 @@ function getCardDisplay(cardCode) {
   };
 }
 
-function getStatusText(roomState, gameState) {
-  if (!roomState) {
-    return "创建房间或输入房间码，和另一位玩家在同一局域网开局。";
-  }
-
-  if (roomState.players.length < 2) {
-    return "等待第二位玩家加入，房主加入后即可随时重新发牌开始。";
-  }
-
-  switch (gameState?.phase) {
-    case "waiting":
-      return "两位玩家已就位，房主可随时开始新一局。";
+function getPhaseLabel(phase) {
+  switch (phase) {
     case "preflop":
-      return "双方已拿到两张手牌，点击“开牌”翻出前三张公共牌。";
+      return "翻牌前";
     case "flop":
-      return "翻牌圈已完成，下一次开牌将翻出转牌。";
+      return "翻牌圈";
     case "turn":
-      return "转牌已亮出，下一次开牌将翻出河牌。";
+      return "转牌圈";
     case "river":
-      return "五张公共牌即将完整，下一次开牌会直接比较双方牌型。";
+      return "河牌圈";
     case "showdown":
-      return gameState.winner?.seat === null
-        ? "本局平手，房主可随时直接开启下一局。"
-        : `本局胜者是${gameState.winner.seat === roomState.self?.seat ? "你" : "对手"}，房主可随时直接开启下一局。`;
+      return "结算";
     default:
-      return "房主可随时开始一局新牌。";
+      return "等待开局";
   }
 }
 
@@ -76,6 +99,62 @@ function getRevealButtonLabel(phase) {
     default:
       return "开牌";
   }
+}
+
+function getBlindBadge(seat, gameState) {
+  if (seat === gameState.dealerSeat && seat === gameState.smallBlindSeat) {
+    return "庄家 / 小盲";
+  }
+
+  if (seat === gameState.bigBlindSeat) {
+    return "大盲";
+  }
+
+  if (seat === gameState.smallBlindSeat) {
+    return "小盲";
+  }
+
+  if (seat === gameState.dealerSeat) {
+    return "庄家";
+  }
+
+  return "";
+}
+
+function getStatusText(roomState, gameState) {
+  if (!roomState) {
+    return "创建房间后，另一位玩家输入房间码加入。同一局域网下即可双人对战。";
+  }
+
+  if (roomState.players.length < 2) {
+    return "等待另一位玩家加入。两位玩家都在场后，房主可以开始比赛。";
+  }
+
+  if (gameState.matchStatus === "gameOver") {
+    return "有玩家筹码归零，本场比赛结束。房主可以点击“重新开赛”，将双方筹码恢复到 50。";
+  }
+
+  if (gameState.phase === "waiting") {
+    return "比赛已准备就绪。房主可以开始新一手，系统会自动扣除小盲 1 和大盲 2。";
+  }
+
+  if (gameState.phase === "showdown") {
+    return gameState.resolution?.message ?? "本手已经结束，房主可以开始下一手。";
+  }
+
+  if (gameState.currentTurnSeat === roomState.self?.seat) {
+    if (gameState.selfCallAmount > 0) {
+      return `轮到你行动。当前需要补到 ${gameState.currentBet}，还差 ${gameState.selfCallAmount} 筹码。`;
+    }
+
+    return "轮到你行动。你可以选择过牌/跟随、加注或弃牌。";
+  }
+
+  if (gameState.actions.canRevealNext) {
+    return "这一街下注已经平齐，房主现在可以点击“开牌”推进公共牌。";
+  }
+
+  return "等待对手完成这一街行动。只有双方本轮投入相等时，房主才可以继续开牌。";
 }
 
 function Card({ cardCode, hidden = false, highlight = false, compact = false }) {
@@ -104,91 +183,148 @@ function Card({ cardCode, hidden = false, highlight = false, compact = false }) 
   );
 }
 
-function SeatLabel({ player, isSelf = false }) {
+function SeatSummary({
+  label,
+  player,
+  stack,
+  contribution,
+  isSelf = false,
+  isActiveTurn = false,
+  blindBadge = "",
+}) {
   if (!player) {
     return (
-      <div className="seat-meta">
-        <span className="seat-role">空位</span>
-        <strong>等待玩家加入</strong>
+      <div className="seat-summary">
+        <div className="seat-title">
+          <span className="seat-label">{label}</span>
+          <strong>等待玩家加入</strong>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="seat-meta">
-      <span className="seat-role">
-        {isSelf ? "你的座位" : "对手座位"}
-        {player.isHost ? " · 房主" : ""}
-      </span>
-      <strong>{player.name}</strong>
+    <div className={`seat-summary ${isActiveTurn ? "is-active-turn" : ""}`}>
+      <div className="seat-title">
+        <span className="seat-label">
+          {label}
+          {player.isHost ? " · 房主" : ""}
+        </span>
+        <strong>{player.name}</strong>
+      </div>
+
+      <div className="seat-badges">
+        {blindBadge ? <span className="mini-badge">{blindBadge}</span> : null}
+        {isActiveTurn ? <span className="mini-badge is-accent">行动中</span> : null}
+      </div>
+
+      <div className="seat-stats">
+        <span>筹码 {stack}</span>
+        <span>本轮已下 {contribution}</span>
+        {isSelf ? <span>你的底牌只在你这里可见</span> : <span>对手手牌在结算前保持背面</span>}
+      </div>
     </div>
   );
 }
 
-function ResultPanel({ showdownResults, selfSeat }) {
-  if (!showdownResults?.length) {
+function ResultPanel({ gameState, selfSeat }) {
+  if (!gameState.resolution) {
     return null;
   }
 
-  const winner = showdownResults.find((result) => result.isWinner);
+  const { resolution, showdownResults } = gameState;
 
   return (
     <section className="result-panel">
-      <div>
-        <p className="eyebrow">本局结果</p>
-        <h3>{winner ? `${winner.seat === selfSeat ? "你" : winner.name}获胜` : "双方平手"}</h3>
+      <div className="result-headline">
+        <p className="eyebrow">本手结果</p>
+        <h3>{resolution.message}</h3>
       </div>
 
-      <div className="result-grid">
-        {showdownResults.map((result) => (
-          <article key={result.seat} className={`result-entry ${result.isWinner ? "is-winner" : ""}`}>
-            <div className="result-header">
-              <span>{result.seat === selfSeat ? "你" : result.name}</span>
-              <strong>{result.handName}</strong>
-            </div>
+      {showdownResults?.length ? (
+        <div className="result-grid">
+          {showdownResults.map((result) => (
+            <article key={result.seat} className={`result-entry ${result.isWinner ? "is-winner" : ""}`}>
+              <div className="result-header">
+                <span>{result.seat === selfSeat ? "你" : result.name}</span>
+                <strong>{result.handName}</strong>
+              </div>
 
-            <div className="result-row">
-              {result.holeCards.map((cardCode) => (
-                <Card key={`${result.seat}-${cardCode}`} cardCode={cardCode} compact />
-              ))}
-            </div>
+              <div className="result-row">
+                {result.holeCards.map((cardCode) => (
+                  <Card key={`${result.seat}-${cardCode}`} cardCode={cardCode} compact />
+                ))}
+              </div>
 
-            <div className="result-row">
-              {result.bestCards.map((cardCode) => (
-                <Card
-                  key={`${result.seat}-${cardCode}-best`}
-                  cardCode={cardCode}
-                  compact
-                  highlight
-                />
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
+              <div className="result-row">
+                {result.bestCards.map((cardCode) => (
+                  <Card key={`${result.seat}-${cardCode}-best`} cardCode={cardCode} compact highlight />
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function RaiseEditor({
+  isOpen,
+  value,
+  min,
+  max,
+  onChange,
+  onClose,
+  onConfirm,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        <p className="eyebrow">自定义加注</p>
+        <h3>输入这一街要加到多少</h3>
+        <p className="modal-copy">
+          输入的是“你这一街总共压到多少”，范围 {min} 到 {max}。
+        </p>
+
+        <input
+          className="text-field"
+          type="number"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+
+        <div className="modal-actions">
+          <button className="secondary-button" type="button" onClick={onClose}>
+            取消
+          </button>
+          <button className="primary-button" type="button" onClick={onConfirm}>
+            确认加注
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export default function App() {
   const hasRestoredRoomRef = useRef(false);
+  const raisePressTimerRef = useRef(null);
+  const raiseLongPressTriggeredRef = useRef(false);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem(PLAYER_NAME_STORAGE_KEY) ?? "");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [roomState, setRoomState] = useState(null);
-  const [gameState, setGameState] = useState({
-    phase: "waiting",
-    board: [],
-    selfHoleCards: [],
-    opponentCardCount: 0,
-    revealedOpponentHoleCards: [],
-    showdownResults: null,
-    actions: {
-      canStartHand: false,
-      canRevealNext: false,
-    },
-  });
+  const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
   const [connectionState, setConnectionState] = useState(socket.connected ? "connected" : "connecting");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isRaiseEditorOpen, setIsRaiseEditorOpen] = useState(false);
+  const [raiseInput, setRaiseInput] = useState("");
 
   useEffect(() => {
     localStorage.setItem(PLAYER_NAME_STORAGE_KEY, playerName.trim());
@@ -228,12 +364,17 @@ export default function App() {
     function handleGameState(nextGameState) {
       startTransition(() => {
         setGameState(nextGameState);
+
+        if (!nextGameState.actions.canRaise) {
+          setIsRaiseEditorOpen(false);
+        }
       });
     }
 
     function handleShowdown(nextGameState) {
       startTransition(() => {
         setGameState(nextGameState);
+        setIsRaiseEditorOpen(false);
       });
     }
 
@@ -268,6 +409,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (gameState.actions.canRaise) {
+      setRaiseInput(String(gameState.minRaiseTo));
+    }
+  }, [gameState.actions.canRaise, gameState.minRaiseTo]);
+
   const selfPlayer = roomState?.players.find((player) => player.isSelf) ?? null;
   const opponent = roomState?.players.find((player) => !player.isSelf) ?? null;
   const tableStatus = getStatusText(roomState, gameState);
@@ -278,6 +425,60 @@ export default function App() {
         ? "连接中"
         : "连接断开";
   const revealButtonLabel = getRevealButtonLabel(gameState.phase);
+  const primaryControlLabel = gameState.matchStatus === "gameOver" ? "重新开赛" : "新一局";
+  const blindBadgeSelf = selfPlayer ? getBlindBadge(selfPlayer.seat, gameState) : "";
+  const blindBadgeOpponent = opponent ? getBlindBadge(opponent.seat, gameState) : "";
+
+  function clearRaisePressTimer() {
+    if (raisePressTimerRef.current) {
+      clearTimeout(raisePressTimerRef.current);
+      raisePressTimerRef.current = null;
+    }
+  }
+
+  function openRaiseEditor() {
+    setRaiseInput(String(gameState.minRaiseTo));
+    setIsRaiseEditorOpen(true);
+  }
+
+  function closeRaiseEditor() {
+    setIsRaiseEditorOpen(false);
+  }
+
+  function emitDefaultRaise() {
+    const defaultTarget = Math.min(gameState.maxRaiseTo, Math.max(gameState.minRaiseTo, gameState.currentBet + 1));
+    socket.emit("game:raise", { targetBet: defaultTarget });
+  }
+
+  function handleRaisePressStart() {
+    if (!gameState.actions.canRaise) {
+      return;
+    }
+
+    raiseLongPressTriggeredRef.current = false;
+    clearRaisePressTimer();
+    raisePressTimerRef.current = setTimeout(() => {
+      raiseLongPressTriggeredRef.current = true;
+      openRaiseEditor();
+    }, 450);
+  }
+
+  function handleRaisePressEnd() {
+    if (!gameState.actions.canRaise) {
+      return;
+    }
+
+    const wasLongPress = raiseLongPressTriggeredRef.current;
+    clearRaisePressTimer();
+
+    if (!wasLongPress) {
+      emitDefaultRaise();
+    }
+  }
+
+  function handleRaisePressCancel() {
+    clearRaisePressTimer();
+  }
 
   function handleCreateRoom() {
     localStorage.removeItem(ROOM_CODE_STORAGE_KEY);
@@ -293,7 +494,12 @@ export default function App() {
     });
   }
 
-  function handleStartHand() {
+  function handlePrimaryControl() {
+    if (gameState.matchStatus === "gameOver") {
+      socket.emit("match:reset");
+      return;
+    }
+
     socket.emit("game:startHand");
   }
 
@@ -301,16 +507,51 @@ export default function App() {
     socket.emit("game:revealNext");
   }
 
+  function handleCall() {
+    socket.emit("game:call");
+  }
+
+  function handleFold() {
+    socket.emit("game:fold");
+  }
+
+  function handleConfirmRaise() {
+    const parsed = Number(raiseInput);
+
+    if (!Number.isInteger(parsed)) {
+      setErrorMessage("请输入整数加注目标。");
+      return;
+    }
+
+    if (parsed < gameState.minRaiseTo || parsed > gameState.maxRaiseTo) {
+      setErrorMessage(`加注目标必须在 ${gameState.minRaiseTo} 到 ${gameState.maxRaiseTo} 之间。`);
+      return;
+    }
+
+    socket.emit("game:raise", { targetBet: parsed });
+    setIsRaiseEditorOpen(false);
+  }
+
   return (
     <div className="app-shell">
       <div className="background-noise" />
+
+      <RaiseEditor
+        isOpen={isRaiseEditorOpen}
+        value={raiseInput}
+        min={gameState.minRaiseTo}
+        max={gameState.maxRaiseTo}
+        onChange={setRaiseInput}
+        onClose={closeRaiseEditor}
+        onConfirm={handleConfirmRaise}
+      />
 
       <aside className="info-rail">
         <div className="rail-panel brand-panel">
           <p className="eyebrow">LAN Hold'em</p>
           <h1>双人德州扑克</h1>
           <p className="brand-copy">
-            一台设备创建房间，另一台设备输入房间码加入。房主控制新一局和开牌节奏。
+            现在已经支持筹码、盲注和下注回合。只有当这一街双方投入相等时，房主才能继续开牌。
           </p>
         </div>
 
@@ -324,10 +565,31 @@ export default function App() {
 
         <div className="rail-panel">
           <div className="panel-head">
-            <span>当前状态</span>
+            <span>当前房间</span>
             <strong>{roomState?.roomCode ? `房间 ${roomState.roomCode}` : "尚未入房"}</strong>
           </div>
           <p className="status-copy">{tableStatus}</p>
+        </div>
+
+        <div className="rail-panel">
+          <div className="stats-grid">
+            <div className="stat-box">
+              <span>当前底池</span>
+              <strong>{gameState.pot}</strong>
+            </div>
+            <div className="stat-box">
+              <span>延续底池</span>
+              <strong>{gameState.carryoverPot}</strong>
+            </div>
+            <div className="stat-box">
+              <span>当前阶段</span>
+              <strong>{getPhaseLabel(gameState.phase)}</strong>
+            </div>
+            <div className="stat-box">
+              <span>本轮目标</span>
+              <strong>{gameState.currentBet}</strong>
+            </div>
+          </div>
         </div>
 
         <div className="rail-panel control-panel">
@@ -338,7 +600,7 @@ export default function App() {
             id="player-name"
             className="text-field"
             maxLength={12}
-            placeholder="默认会自动使用 玩家 1 / 玩家 2"
+            placeholder="默认使用 玩家 1 / 玩家 2"
             value={playerName}
             onChange={(event) => setPlayerName(event.target.value)}
           />
@@ -369,11 +631,12 @@ export default function App() {
               <button
                 className="primary-button"
                 type="button"
-                disabled={!gameState.actions.canStartHand}
-                onClick={handleStartHand}
+                disabled={gameState.matchStatus === "gameOver" ? !gameState.actions.canResetMatch : !gameState.actions.canStartHand}
+                onClick={handlePrimaryControl}
               >
-                新一局
+                {primaryControlLabel}
               </button>
+
               <button
                 className="secondary-button"
                 type="button"
@@ -387,16 +650,66 @@ export default function App() {
 
           {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
         </div>
+
+        {roomState ? (
+          <div className="rail-panel action-panel">
+            <div className="panel-head">
+              <span>你的行动</span>
+              <strong>{gameState.currentTurnSeat === roomState.self?.seat ? "轮到你" : "等待中"}</strong>
+            </div>
+
+            <div className="action-notes">
+              <span>你还需补 {gameState.selfCallAmount}</span>
+              <span>可加到 {gameState.maxRaiseTo}</span>
+            </div>
+
+            <div className="action-grid">
+              <button
+                className="secondary-button action-button"
+                type="button"
+                disabled={!gameState.actions.canCall}
+                onClick={handleCall}
+              >
+                {gameState.selfCallAmount > 0 ? `跟随 · ${gameState.selfCallAmount}` : "过牌 / 跟随"}
+              </button>
+
+              <button
+                className="secondary-button action-button"
+                type="button"
+                disabled={!gameState.actions.canRaise}
+                onPointerDown={handleRaisePressStart}
+                onPointerUp={handleRaisePressEnd}
+                onPointerLeave={handleRaisePressCancel}
+                onPointerCancel={handleRaisePressCancel}
+              >
+                加注 · 默认 +1
+              </button>
+
+              <button
+                className="danger-button action-button"
+                type="button"
+                disabled={!gameState.actions.canFold}
+                onClick={handleFold}
+              >
+                弃牌
+              </button>
+            </div>
+
+            <p className="muted-text">
+              短按“加注”默认在当前目标上加 1，长按约半秒会弹出自定义输入。
+            </p>
+          </div>
+        ) : null}
       </aside>
 
       <main className="table-stage">
         {!roomState ? (
           <section className="hero-table">
             <div className="hero-copy">
-              <p className="eyebrow">局域网双人试玩</p>
-              <h2>发两张底牌，三次开牌，第四次直接比出最大牌型。</h2>
+              <p className="eyebrow">局域网双人对局</p>
+              <h2>双人德州现在支持盲注、筹码、下注回合与延续底池。</h2>
               <p>
-                这个版本专注在最核心的牌局流程。没有筹码、下注和弃牌，只有同步、手牌、公共牌和最后的胜负展示。
+                每位玩家初始 50 筹码。每一街都要把下注补齐，房主才能继续开牌。平局时底池会留到下一手，直到有人真正赢下它。
               </p>
             </div>
 
@@ -409,19 +722,24 @@ export default function App() {
         ) : (
           <section className="poker-table">
             <div className="seat-zone opponent-zone">
-              <SeatLabel player={opponent} />
+              <SeatSummary
+                label="对手席位"
+                player={opponent}
+                stack={gameState.opponentStack}
+                contribution={gameState.opponentStreetContribution}
+                isActiveTurn={gameState.currentTurnSeat === opponent?.seat}
+                blindBadge={blindBadgeOpponent}
+              />
+
               <div className="card-row">
                 {opponent ? (
-                  gameState.phase === "showdown" ? (
-                    (gameState.revealedOpponentHoleCards.length
-                      ? gameState.revealedOpponentHoleCards
-                      : [null, null]
-                    ).map((cardCode, index) => (
-                      <Card key={`opponent-${cardCode ?? index}`} cardCode={cardCode} />
+                  gameState.phase === "showdown" && gameState.revealedOpponentHoleCards.length ? (
+                    gameState.revealedOpponentHoleCards.map((cardCode, index) => (
+                      <Card key={`opponent-${cardCode}-${index}`} cardCode={cardCode} />
                     ))
                   ) : (
                     Array.from({ length: Math.max(gameState.opponentCardCount, 2) }, (_, index) => (
-                      <Card key={`hidden-${index}`} hidden />
+                      <Card key={`opponent-hidden-${index}`} hidden />
                     ))
                   )
                 ) : (
@@ -433,10 +751,15 @@ export default function App() {
             <div className="board-zone">
               <div className="board-header">
                 <div>
-                  <p className="eyebrow">公共牌</p>
-                  <h3>第 {Math.max(gameState.handNumber, 1)} 局</h3>
+                  <p className="eyebrow">桌面中央</p>
+                  <h3>第 {Math.max(gameState.handNumber, 1)} 手</h3>
                 </div>
-                <span className={`phase-badge is-${gameState.phase}`}>{gameState.phase}</span>
+
+                <div className="board-metrics">
+                  <span className="phase-badge">{getPhaseLabel(gameState.phase)}</span>
+                  <span className="metric-pill">底池 {gameState.pot}</span>
+                  <span className="metric-pill">延续 {gameState.carryoverPot}</span>
+                </div>
               </div>
 
               <div className="card-row board-row">
@@ -448,14 +771,25 @@ export default function App() {
                 ))}
               </div>
 
-              <ResultPanel showdownResults={gameState.showdownResults} selfSeat={roomState.self?.seat} />
+              <ResultPanel gameState={gameState} selfSeat={roomState.self?.seat} />
             </div>
 
             <div className="seat-zone self-zone">
-              <SeatLabel player={selfPlayer} isSelf />
+              <SeatSummary
+                label="你的席位"
+                player={selfPlayer}
+                stack={gameState.selfStack}
+                contribution={gameState.selfStreetContribution}
+                isSelf
+                isActiveTurn={gameState.currentTurnSeat === selfPlayer?.seat}
+                blindBadge={blindBadgeSelf}
+              />
+
               <div className="card-row">
                 {gameState.selfHoleCards.length ? (
-                  gameState.selfHoleCards.map((cardCode) => <Card key={`self-${cardCode}`} cardCode={cardCode} />)
+                  gameState.selfHoleCards.map((cardCode, index) => (
+                    <Card key={`self-${cardCode}-${index}`} cardCode={cardCode} />
+                  ))
                 ) : (
                   Array.from({ length: 2 }, (_, index) => <Card key={`self-empty-${index}`} hidden />)
                 )}

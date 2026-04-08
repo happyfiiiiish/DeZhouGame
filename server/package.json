@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "node --test src/poker.test.js"
+    "test": "node --test src/poker.test.js src/roomManager.test.js"
   },
   "dependencies": {
     "cors": "latest",

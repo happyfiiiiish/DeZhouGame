@@ -88,6 +88,43 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("game:raise", ({ targetBet } = {}) => {
+    try {
+      const room = roomManager.raiseTo(socket.id, targetBet);
+      emitRoomAndGameState(room);
+    } catch (error) {
+      emitError(socket, error.message);
+    }
+  });
+
+  socket.on("game:call", () => {
+    try {
+      const room = roomManager.call(socket.id);
+      emitRoomAndGameState(room);
+    } catch (error) {
+      emitError(socket, error.message);
+    }
+  });
+
+  socket.on("game:fold", () => {
+    try {
+      const room = roomManager.fold(socket.id);
+      emitRoomAndGameState(room);
+      emitShowdown(room);
+    } catch (error) {
+      emitError(socket, error.message);
+    }
+  });
+
+  socket.on("match:reset", () => {
+    try {
+      const room = roomManager.resetMatch(socket.id);
+      emitRoomAndGameState(room);
+    } catch (error) {
+      emitError(socket, error.message);
+    }
+  });
+
   socket.on("disconnect", () => {
     const room = roomManager.removeSocket(socket.id);
 

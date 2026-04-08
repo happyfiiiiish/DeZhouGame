@@ -185,8 +185,34 @@ input {
   gap: 0.85rem;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.stat-box {
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stat-box span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stat-box strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.35rem;
+}
+
 .primary-button,
-.secondary-button {
+.secondary-button,
+.danger-button {
   border: 0;
   border-radius: 999px;
   padding: 0.95rem 1.2rem;
@@ -204,14 +230,20 @@ input {
   background: linear-gradient(135deg, #d2e6dc 0%, #9fd0b9 100%);
 }
 
+.danger-button {
+  background: linear-gradient(135deg, #f2c5c5 0%, #d97f7f 100%);
+}
+
 .primary-button:hover,
-.secondary-button:hover {
+.secondary-button:hover,
+.danger-button:hover {
   transform: translateY(-1px);
   filter: brightness(1.05);
 }
 
 .primary-button:disabled,
-.secondary-button:disabled {
+.secondary-button:disabled,
+.danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
   filter: grayscale(0.2);
@@ -312,6 +344,68 @@ input {
   font-size: 1.15rem;
 }
 
+.seat-summary {
+  min-width: min(100%, 360px);
+  padding: 1rem 1.15rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 15, 12, 0.24);
+  backdrop-filter: blur(16px);
+}
+
+.seat-summary.is-active-turn {
+  border-color: rgba(240, 201, 106, 0.48);
+  box-shadow: 0 0 0 1px rgba(240, 201, 106, 0.18);
+}
+
+.seat-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.seat-label {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.seat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.mini-badge,
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.42rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.mini-badge.is-accent,
+.metric-pill {
+  color: var(--gold-strong);
+  border-color: rgba(240, 201, 106, 0.22);
+  background: rgba(240, 201, 106, 0.1);
+}
+
+.seat-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  margin-top: 0.9rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
 .board-zone {
   margin: 0 auto;
   width: min(100%, 760px);
@@ -328,6 +422,13 @@ input {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.board-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 
 .board-header h3 {
@@ -427,6 +528,11 @@ input {
   animation: fade-in 260ms ease both;
 }
 
+.result-headline h3 {
+  font-size: 1.1rem;
+  line-height: 1.45;
+}
+
 .result-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -458,6 +564,72 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+.action-panel {
+  gap: 1rem;
+}
+
+.action-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.action-button {
+  width: 100%;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(3, 8, 7, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.modal-card {
+  width: min(100%, 420px);
+  padding: 1.3rem;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(240, 201, 106, 0.14), transparent 36%),
+    linear-gradient(180deg, rgba(16, 39, 30, 0.96), rgba(8, 19, 16, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+}
+
+.modal-card h3 {
+  margin: 0;
+  font-family: Georgia, "STKaiti", serif;
+  font-size: 1.6rem;
+}
+
+.modal-copy {
+  margin: 0.7rem 0 1rem;
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.modal-actions > * {
+  flex: 1;
 }
 
 @keyframes rise-in {
@@ -525,6 +697,21 @@ input {
 
   .board-zone {
     padding: 1rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .seat-title,
+  .board-header,
+  .modal-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .board-metrics {
+    justify-content: flex-start;
   }
 
   .playing-card {
