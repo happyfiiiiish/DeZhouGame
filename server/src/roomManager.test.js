@@ -10,142 +10,198 @@ function createSocket(id) {
   };
 }
 
-function createJoinedRoom() {
+function createTable(playerCount = 2) {
   const manager = new RoomManager();
-  const hostSocket = createSocket("host-socket");
-  const guestSocket = createSocket("guest-socket");
+  const sockets = [];
+  const players = [];
+
+  const hostSocket = createSocket("socket-0");
   const { room } = manager.createRoom(hostSocket, "Host");
+  sockets.push(hostSocket);
+  players.push(manager.getPlayerForSocket(hostSocket.id));
 
-  manager.joinRoom(guestSocket, room.roomCode, "Guest");
+  for (let index = 1; index < playerCount; index += 1) {
+    const socket = createSocket(`socket-${index}`);
+    manager.joinRoom(socket, room.roomCode, `Player ${index + 1}`);
+    sockets.push(socket);
+    players.push(manager.getPlayerForSocket(socket.id));
+  }
 
-  return {
-    manager,
-    room,
-    hostSocket,
-    guestSocket,
-    hostPlayer: manager.getPlayerForSocket(hostSocket.id),
-    guestPlayer: manager.getPlayerForSocket(guestSocket.id),
-  };
+  return { manager, room, sockets, players };
 }
 
-function setClosedRiver(room, hostPlayer, guestPlayer, { pot, carryoverPot = 0, hostStack = 10, guestStack = 10 }) {
+function setRiverAllInState(room, players, board, hands, totalHandContributions) {
   room.phase = "river";
-  room.board = ["AS", "KS", "QS", "JS", "TS"];
-  room.hands = {
-    [hostPlayer.id]: ["2C", "3D"],
-    [guestPlayer.id]: ["4C", "5D"],
-  };
-  room.pot = pot;
-  room.carryoverPot = carryoverPot;
+  room.board = board;
+  room.hands = Object.fromEntries(players.map((player) => [player.id, hands[player.id]]));
   room.currentBet = 0;
   room.currentTurnSeat = null;
-  room.streetContributions = {
-    [hostPlayer.id]: 0,
-    [guestPlayer.id]: 0,
-  };
-  room.hasActedThisStreet = {
-    [hostPlayer.id]: true,
-    [guestPlayer.id]: true,
-  };
-  room.stacks[hostPlayer.id] = hostStack;
-  room.stacks[guestPlayer.id] = guestStack;
+  room.streetContributions = Object.fromEntries(players.map((player) => [player.id, 0]));
+  room.totalHandContributions = Object.fromEntries(
+    players.map((player) => [player.id, totalHandContributions[player.id] ?? 0]),
+  );
+  room.hasActedThisStreet = Object.fromEntries(players.map((player) => [player.id, true]));
+  room.foldedPlayerIds = [];
+  room.allInPlayerIds = players.map((player) => player.id);
+
+  for (const player of players) {
+    room.stacks[player.id] = 0;
+  }
 }
 
-test("startHand posts blinds and requires matched action before reveal", () => {
-  const { manager, room, hostSocket, guestSocket, hostPlayer } = createJoinedRoom();
+test("房间在大厅阶段最多支持 8 人加入，第 9 人会被拒绝", () => {
+  const manager = new RoomManager();
+  const hostSocket = createSocket("host");
+  const { room } = manager.createRoom(hostSocket, "Host");
 
-  manager.startHand(hostSocket.id);
-  let hostState = manager.buildGameState(room, hostPlayer.id);
+  for (let index = 1; index < 8; index += 1) {
+    manager.joinRoom(createSocket(`guest-${index}`), room.roomCode, `Guest ${index}`);
+  }
 
-  assert.equal(hostState.selfStack, 49);
-  assert.equal(hostState.opponentStack, 48);
-  assert.equal(hostState.currentBet, 2);
-  assert.equal(hostState.currentTurnSeat, 0);
-  assert.equal(hostState.actions.canRevealNext, false);
+  assert.equal(room.players.length, 8);
+  assert.throws(
+    () => manager.joinRoom(createSocket("guest-9"), room.roomCode, "Overflow"),
+    /房间已满/,
+  );
+});
 
-  manager.call(hostSocket.id);
-  hostState = manager.buildGameState(room, hostPlayer.id);
-  assert.equal(hostState.actions.canRevealNext, false);
+test("房主开始整场后房间会锁定，后续无法再加入新人", () => {
+  const { manager, room, sockets } = createTable(3);
 
-  manager.call(guestSocket.id);
-  hostState = manager.buildGameState(room, hostPlayer.id);
+  manager.startHand(sockets[0].id);
+
+  assert.equal(room.roomStatus, "running");
+  assert.equal(room.isJoinLocked, true);
+  assert.throws(
+    () => manager.joinRoom(createSocket("late-player"), room.roomCode, "Late"),
+    /已开始/,
+  );
+});
+
+test("三人局的庄位、小盲、大盲和首轮行动顺序符合多人德州规则", () => {
+  const { manager, room, sockets } = createTable(3);
+
+  manager.startHand(sockets[0].id);
+  assert.equal(room.dealerSeat, 0);
+  assert.equal(room.smallBlindSeat, 1);
+  assert.equal(room.bigBlindSeat, 2);
+  assert.equal(room.currentTurnSeat, 0);
+
+  manager.call(sockets[0].id);
+  assert.equal(room.currentTurnSeat, 1);
+
+  manager.call(sockets[1].id);
+  assert.equal(room.currentTurnSeat, 2);
+
+  manager.call(sockets[2].id);
+  assert.equal(room.currentTurnSeat, null);
+
+  const hostPlayer = manager.getPlayerForSocket(sockets[0].id);
+  const hostState = manager.buildGameState(room, hostPlayer.id);
   assert.equal(hostState.actions.canRevealNext, true);
+
+  manager.revealNext(sockets[0].id);
+  assert.equal(room.phase, "flop");
+  assert.equal(room.currentTurnSeat, 1);
 });
 
-test("fold awards the entire pot to the non-folding player", () => {
-  const { manager, room, hostSocket, guestSocket, hostPlayer } = createJoinedRoom();
+test("多人全压时会正确切分主池和边池，并把筹码发给对应赢家", () => {
+  const { manager, room, sockets, players } = createTable(3);
+  const hostPlayer = players[0];
+  const secondPlayer = players[1];
+  const thirdPlayer = players[2];
 
-  manager.startHand(hostSocket.id);
-  manager.raiseTo(hostSocket.id, 3);
-  manager.fold(guestSocket.id);
+  room.roomStatus = "running";
+  room.isJoinLocked = true;
+  room.dealerSeat = 0;
+  room.smallBlindSeat = 1;
+  room.bigBlindSeat = 2;
 
-  const state = manager.buildGameState(room, hostPlayer.id);
+  setRiverAllInState(
+    room,
+    players,
+    ["AS", "KS", "8D", "7C", "2H"],
+    {
+      [hostPlayer.id]: ["AH", "AD"],
+      [secondPlayer.id]: ["KH", "KD"],
+      [thirdPlayer.id]: ["QS", "QH"],
+    },
+    {
+      [hostPlayer.id]: 10,
+      [secondPlayer.id]: 20,
+      [thirdPlayer.id]: 20,
+    },
+  );
 
-  assert.equal(state.phase, "showdown");
-  assert.equal(state.selfStack, 52);
-  assert.equal(state.opponentStack, 48);
-  assert.equal(state.resolution.type, "fold");
-  assert.equal(state.matchStatus, "active");
+  manager.revealNext(sockets[0].id);
+
+  assert.equal(room.showdown.type, "showdown");
+  assert.equal(room.showdown.totalPot, 50);
+  assert.deepEqual(
+    room.showdown.winners
+      .map((winner) => ({ seat: winner.seat, amount: winner.amount }))
+      .sort((left, right) => left.seat - right.seat),
+    [
+      { seat: 0, amount: 30 },
+      { seat: 1, amount: 20 },
+    ],
+  );
+  assert.equal(room.stacks[hostPlayer.id], 30);
+  assert.equal(room.stacks[secondPlayer.id], 20);
+  assert.equal(room.stacks[thirdPlayer.id], 0);
+  assert.equal(room.roomStatus, "running");
 });
 
-test("tie carries the current pot into the next hand when stacks remain", () => {
-  const { manager, room, hostSocket, hostPlayer, guestPlayer } = createJoinedRoom();
+test("弃牌会让剩余玩家直接收下底池", () => {
+  const { manager, room, sockets, players } = createTable(2);
 
-  setClosedRiver(room, hostPlayer, guestPlayer, {
-    pot: 6,
-    hostStack: 12,
-    guestStack: 9,
-  });
+  manager.startHand(sockets[0].id);
+  manager.call(sockets[0].id);
+  manager.fold(sockets[1].id);
 
-  manager.revealNext(hostSocket.id);
-
-  assert.equal(room.carryoverPot, 6);
-  assert.equal(room.pot, 0);
-  assert.equal(room.showdown.winnerReason, "tie");
-  assert.equal(room.matchStatus, "active");
+  const winner = players[0];
+  assert.equal(room.phase, "showdown");
+  assert.equal(room.showdown.type, "fold");
+  assert.equal(room.showdown.winnerPlayerId, winner.id);
+  assert.equal(room.stacks[winner.id], 52);
 });
 
-test("tie splits the total available chips instead of carrying when someone would stay at zero", () => {
-  const { manager, room, hostSocket, hostPlayer, guestPlayer } = createJoinedRoom();
+test("只剩一位玩家仍有筹码时比赛结束，房主可以重新开赛", () => {
+  const { manager, room, sockets, players } = createTable(2);
+  const hostPlayer = players[0];
+  const guestPlayer = players[1];
 
-  setClosedRiver(room, hostPlayer, guestPlayer, {
-    pot: 3,
-    carryoverPot: 5,
-    hostStack: 0,
-    guestStack: 0,
-  });
+  room.roomStatus = "running";
+  room.isJoinLocked = true;
+  room.dealerSeat = 0;
+  room.smallBlindSeat = 0;
+  room.bigBlindSeat = 1;
 
-  manager.revealNext(hostSocket.id);
+  setRiverAllInState(
+    room,
+    players,
+    ["AS", "KD", "8H", "6C", "2S"],
+    {
+      [hostPlayer.id]: ["AH", "AD"],
+      [guestPlayer.id]: ["KS", "KH"],
+    },
+    {
+      [hostPlayer.id]: 50,
+      [guestPlayer.id]: 50,
+    },
+  );
 
-  assert.equal(room.carryoverPot, 0);
-  assert.equal(room.pot, 0);
-  assert.equal(room.matchStatus, "active");
-  assert.equal(room.stacks[hostPlayer.id] + room.stacks[guestPlayer.id], 8);
-  assert.equal(room.showdown.winnerReason, "split");
-});
+  manager.revealNext(sockets[0].id);
 
-test("game over can be reset back to a fresh 50-chip match", () => {
-  const { manager, room, hostSocket, hostPlayer, guestPlayer } = createJoinedRoom();
+  assert.equal(room.roomStatus, "finished");
+  assert.equal(room.stacks[hostPlayer.id], 100);
+  assert.equal(room.stacks[guestPlayer.id], 0);
 
-  setClosedRiver(room, hostPlayer, guestPlayer, {
-    pot: 4,
-    hostStack: 6,
-    guestStack: 0,
-  });
-  room.board = ["AH", "KH", "QH", "JH", "8C"];
-  room.hands = {
-    [hostPlayer.id]: ["TH", "2D"],
-    [guestPlayer.id]: ["7C", "6D"],
-  };
-
-  manager.revealNext(hostSocket.id);
-  assert.equal(room.matchStatus, "gameOver");
-
-  manager.resetMatch(hostSocket.id);
-  assert.equal(room.matchStatus, "active");
+  manager.resetMatch(sockets[0].id);
+  assert.equal(room.roomStatus, "lobby");
+  assert.equal(room.isJoinLocked, false);
   assert.equal(room.phase, "waiting");
   assert.equal(room.handNumber, 0);
-  assert.equal(room.carryoverPot, 0);
   assert.equal(room.stacks[hostPlayer.id], 50);
   assert.equal(room.stacks[guestPlayer.id], 50);
 });

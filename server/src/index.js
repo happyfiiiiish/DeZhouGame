@@ -130,6 +130,7 @@ io.on("connection", (socket) => {
 
     if (room) {
       emitRoomAndGameState(room);
+      emitShowdown(room);
     }
   });
 });
