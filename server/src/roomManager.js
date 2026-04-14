@@ -274,6 +274,152 @@ function buildShowdownResults(room) {
   });
 }
 
+function buildHistorySummary(room, showdown) {
+  if (!showdown) {
+    return "";
+  }
+
+  if (showdown.type === "fold") {
+    const winner = room.players.find((player) => player.id === showdown.winnerPlayerId);
+    const foldedPlayer = room.players.find((player) => player.id === showdown.foldedByPlayerId);
+
+    if (showdown.winnerReason === "disconnect") {
+      return `${winner?.name ?? "赢家"} 因对手离桌收下 ${showdown.totalPot} 筹码`;
+    }
+
+    return `${foldedPlayer?.name ?? "有玩家"} 弃牌，${winner?.name ?? "赢家"} 收下 ${showdown.totalPot} 筹码`;
+  }
+
+  if (showdown.type !== "showdown") {
+    return showdown.message ?? "";
+  }
+
+  const winnerIds = showdown.winners?.map((winner) => winner.playerId) ?? [];
+
+  if (winnerIds.length > 1) {
+    const winnerNames = winnerIds
+      .map((playerId) => room.players.find((player) => player.id === playerId)?.name)
+      .filter(Boolean)
+      .join(" / ");
+    const prefix = showdown.potResults?.length > 1 ? `${winnerNames} 完成分池` : `${winnerNames} 平分底池`;
+    return `${prefix}，总计 ${showdown.totalPot} 筹码`;
+  }
+
+  const winnerResult = showdown.results?.find((result) => result.playerId === showdown.winnerPlayerId) ?? null;
+  const loserText = (showdown.results ?? [])
+    .filter((result) => result.playerId !== showdown.winnerPlayerId)
+    .map((result) => `${result.name} 的${result.handName}`)
+    .join("、");
+
+  if (winnerResult && loserText) {
+    return `${winnerResult.name} ${winnerResult.handName} 胜 ${loserText}，收下 ${showdown.totalPot} 筹码`;
+  }
+
+  if (winnerResult) {
+    return `${winnerResult.name} ${winnerResult.handName} 收下 ${showdown.totalPot} 筹码`;
+  }
+
+  return showdown.message ?? "";
+}
+
+function buildHandHistoryEntry(room) {
+  const showdown = room.showdown;
+
+  if (!showdown) {
+    return null;
+  }
+
+  const folded = getPlayerIdSet(room.foldedPlayerIds);
+  const showdownResults = new Map((showdown.results ?? []).map((result) => [result.playerId, result]));
+  const winnings = new Map((showdown.winners ?? []).map((winner) => [winner.playerId, winner.amount]));
+  const participants = sortPlayersBySeat(room.players).filter(
+    (player) =>
+      Boolean(room.hands[player.id]) ||
+      (room.totalHandContributions[player.id] ?? 0) > 0 ||
+      winnings.has(player.id),
+  );
+
+  return {
+    id: `hand-${room.handNumber}`,
+    handNumber: room.handNumber,
+    endedBy: showdown.winnerReason === "disconnect" ? "disconnect" : showdown.type,
+    summary: buildHistorySummary(room, showdown),
+    board: [...room.board],
+    totalPot: showdown.totalPot ?? 0,
+    potResults:
+      showdown.potResults?.map((pot, index) => ({
+        id: `${room.handNumber}-pot-${index}`,
+        amount: pot.amount,
+        winnerIds: [...pot.winnerIds],
+        eligiblePlayerIds: [...pot.eligiblePlayerIds],
+      })) ?? [],
+    winners:
+      showdown.winners?.map((winner) => ({
+        playerId: winner.playerId,
+        seat: winner.seat,
+        amount: winner.amount,
+      })) ?? [],
+    players: participants.map((player) => {
+      const result = showdownResults.get(player.id);
+      const holeCards = room.hands[player.id] ?? [];
+      const totalContribution = room.totalHandContributions[player.id] ?? 0;
+      const winAmount = winnings.get(player.id) ?? 0;
+      const evaluation =
+        room.board.length === 5 && holeCards.length === 2
+          ? evaluateSevenCardHand([...holeCards, ...room.board])
+          : null;
+
+      return {
+        playerId: player.id,
+        seat: player.seat,
+        name: player.name,
+        folded: folded.has(player.id),
+        showedDown: Boolean(result),
+        holeCards,
+        handName: result?.handName ?? evaluation?.name ?? null,
+        bestCards: result?.bestCards ?? evaluation?.bestCards ?? [],
+        netChips: winAmount - totalContribution,
+      };
+    }),
+  };
+}
+
+function filterHistoryEntryForViewer(entry, viewerId) {
+  return {
+    ...entry,
+    players: entry.players.map((player) => {
+      const handVisible = player.playerId === viewerId || player.showedDown;
+
+      return {
+        seat: player.seat,
+        playerId: player.playerId,
+        name: player.name,
+        folded: player.folded,
+        showedDown: player.showedDown,
+        handVisible,
+        holeCards: handVisible ? player.holeCards : [],
+        handName: handVisible ? player.handName : null,
+        bestCards: handVisible ? player.bestCards : [],
+        netChips: player.netChips,
+      };
+    }),
+  };
+}
+
+function buildHistoryForViewer(room, viewerId) {
+  return (room.handHistory ?? []).map((entry) => filterHistoryEntryForViewer(entry, viewerId));
+}
+
+function appendHandHistory(room) {
+  const entry = buildHandHistoryEntry(room);
+
+  if (!entry) {
+    return;
+  }
+
+  room.handHistory.unshift(entry);
+}
+
 function compareResults(left, right) {
   return compareHandStrength(left.strength, right.strength);
 }
@@ -335,6 +481,7 @@ function createSeatSnapshot(room, viewerId) {
   const folded = getPlayerIdSet(room.foldedPlayerIds);
   const allIn = getPlayerIdSet(room.allInPlayerIds);
   const eliminated = getPlayerIdSet(room.eliminatedPlayerIds);
+  const spectatorCanSeeAll = Boolean(viewer && eliminated.has(viewer.id));
 
   return Array.from({ length: MAX_PLAYERS }, (_, seat) => {
     const player = getPlayerBySeat(room, seat);
@@ -364,7 +511,10 @@ function createSeatSnapshot(room, viewerId) {
       isActivePlayer: (room.stacks[player.id] ?? 0) > 0 && !eliminated.has(player.id),
       holeCardCount: room.hands[player.id] ? 2 : 0,
       revealedHoleCards:
-        player.id === viewerId || showdownOpen ? room.hands[player.id] ?? [] : [],
+        player.id === viewerId ||
+        ((!folded.has(player.id) && showdownOpen) || (!folded.has(player.id) && spectatorCanSeeAll))
+          ? room.hands[player.id] ?? []
+          : [],
       streetContribution: room.streetContributions[player.id] ?? 0,
       totalContribution: room.totalHandContributions[player.id] ?? 0,
       isSelfSeat: viewer ? viewer.seat === seat : false,
@@ -380,6 +530,7 @@ function resetMatchState(room) {
   room.smallBlindSeat = null;
   room.bigBlindSeat = null;
   room.eliminatedPlayerIds = [];
+  room.handHistory = [];
   room.stacks = {};
 
   for (const player of room.players) {
@@ -413,6 +564,7 @@ export class RoomManager {
       bigBlindSeat: null,
       stacks: {},
       eliminatedPlayerIds: [],
+      handHistory: [],
       animationCounter: 0,
       ...createEmptyHandState(),
     };
@@ -652,6 +804,7 @@ export class RoomManager {
         winnerPlayerId: winner.id,
         winnerSeat: winner.seat,
         winnerReason: "fold",
+        foldedByPlayerId: actingPlayer.id,
         message: `${winner.name} 因其他玩家弃牌，直接赢下 ${totalWon} 筹码。`,
         totalPot: totalWon,
         winners: [{ playerId: winner.id, seat: winner.seat, amount: totalWon }],
@@ -661,6 +814,7 @@ export class RoomManager {
         { fromSeat: null, toSeat: winner.seat, amount: totalWon },
       ]);
 
+      appendHandHistory(room);
       finalizeHand(room);
       return room;
     }
@@ -707,6 +861,7 @@ export class RoomManager {
         return { room, becameShowdown: false };
       case "river":
         room.showdown = this.#buildShowdown(room);
+        appendHandHistory(room);
         finalizeHand(room);
         return { room, becameShowdown: true };
       default:
@@ -768,6 +923,7 @@ export class RoomManager {
         buildAnimation(room, "foldWin", [
           { fromSeat: null, toSeat: winner.seat, amount: totalWon },
         ]);
+        appendHandHistory(room);
         finalizeHand(room);
       } else if (room.currentTurnSeat === leavingPlayer.seat) {
         const nextSeat = getNextActionableSeat(room, leavingPlayer.seat, false);
@@ -796,6 +952,7 @@ export class RoomManager {
         id: player.id,
         seat: player.seat,
         name: player.name,
+        stack: room.stacks[player.id] ?? 0,
         isHost: player.isHost,
         isSelf: player.id === playerId,
         isEliminated: (room.stacks[player.id] ?? 0) === 0,
@@ -864,6 +1021,7 @@ export class RoomManager {
           bestCards: result.bestCards,
           isWinner: room.showdown.winners?.some((winner) => winner.playerId === result.playerId) ?? false,
         })) ?? null,
+      handHistory: buildHistoryForViewer(room, playerId),
       lastAnimation: room.lastAnimation,
       actions: {
         canStartHand:

@@ -260,8 +260,12 @@ input {
 
 .table-felt {
   position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.9rem;
   width: 100%;
   height: 100%;
+  padding: 1rem;
   border-radius: 28px;
   background:
     radial-gradient(circle at center, rgba(255, 255, 255, 0.07), transparent 34%),
@@ -271,14 +275,178 @@ input {
 }
 
 .table-topbar {
-  position: absolute;
-  top: 1rem;
-  left: 1rem;
-  right: 1rem;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 320px;
   gap: 0.75rem;
   z-index: 3;
+}
+
+.history-shell {
+  position: absolute;
+  bottom: clamp(8.8rem, 13vw, 10.5rem);
+  right: 1rem;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.7rem;
+}
+
+.history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid rgba(240, 201, 106, 0.24);
+  border-radius: 999px;
+  padding: 0.68rem 1rem;
+  background: rgba(5, 18, 14, 0.92);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+}
+
+.history-toggle span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.65rem;
+  height: 1.65rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(240, 201, 106, 0.16);
+  color: var(--gold-strong);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.history-drawer {
+  width: min(640px, calc(100vw - 3rem));
+  max-height: min(72vh, 760px);
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: auto;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.history-item.is-selected {
+  border-color: rgba(240, 201, 106, 0.36);
+  background: rgba(240, 201, 106, 0.08);
+}
+
+.history-item span,
+.history-empty-list,
+.history-empty span,
+.history-player-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.history-detail,
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  overflow: auto;
+}
+
+.history-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.history-detail-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.history-board,
+.history-pots,
+.history-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.history-player-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.history-player-card {
+  padding: 0.85rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.history-player-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.history-player-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  margin-bottom: 0.7rem;
+}
+
+.history-net.is-positive {
+  color: var(--gold-strong);
+}
+
+.history-net.is-negative {
+  color: #ffb4b4;
+}
+
+.history-hidden-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.1rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.history-best-row {
+  margin-top: 0.65rem;
+}
+
+.table-middle {
+  position: relative;
+  min-height: 0;
+  padding: 0 0.75rem;
 }
 
 .floating-panel {
@@ -314,9 +482,9 @@ input {
 
 .table-side {
   position: absolute;
-  top: 5.8rem;
-  bottom: 9.9rem;
-  width: 250px;
+  top: 0;
+  bottom: 0;
+  width: 228px;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -355,6 +523,29 @@ input {
   font-size: 0.84rem;
 }
 
+.roster-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.roster-main strong {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.roster-main span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.roster-stack {
+  color: var(--gold-strong);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
 .roster-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
@@ -384,9 +575,9 @@ input {
 
 .table-seat {
   position: absolute;
-  width: 176px;
-  min-height: 116px;
-  padding: 0.8rem;
+  width: 164px;
+  min-height: 108px;
+  padding: 0.72rem;
   border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(7, 21, 16, 0.78);
@@ -416,14 +607,14 @@ input {
   background: rgba(6, 16, 13, 0.46);
 }
 
-.seat-pos-0 { left: 50%; top: 12%; }
-.seat-pos-1 { left: 77%; top: 20%; }
-.seat-pos-2 { left: 88%; top: 41%; }
-.seat-pos-3 { left: 78%; top: 69%; }
-.seat-pos-4 { left: 50%; top: 79%; }
-.seat-pos-5 { left: 22%; top: 69%; }
-.seat-pos-6 { left: 12%; top: 41%; }
-.seat-pos-7 { left: 23%; top: 20%; }
+.seat-pos-0 { left: 50%; top: 7%; }
+.seat-pos-1 { left: 79%; top: 16%; }
+.seat-pos-2 { left: 89%; top: 38%; }
+.seat-pos-3 { left: 80%; top: 71%; }
+.seat-pos-4 { left: 50%; top: 90%; }
+.seat-pos-5 { left: 20%; top: 71%; }
+.seat-pos-6 { left: 11%; top: 38%; }
+.seat-pos-7 { left: 21%; top: 16%; }
 
 .seat-head {
   display: flex;
@@ -474,7 +665,7 @@ input {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 0.65rem;
+  margin-top: 0.55rem;
   color: var(--muted);
   font-size: 0.76rem;
 }
@@ -493,14 +684,14 @@ input {
   z-index: 2;
 }
 
-.bet-pos-0 { left: 50%; top: 24%; }
-.bet-pos-1 { left: 69%; top: 28%; }
-.bet-pos-2 { left: 75%; top: 42%; }
-.bet-pos-3 { left: 67%; top: 58%; }
-.bet-pos-4 { left: 50%; top: 62%; }
-.bet-pos-5 { left: 33%; top: 58%; }
-.bet-pos-6 { left: 25%; top: 42%; }
-.bet-pos-7 { left: 31%; top: 28%; }
+.bet-pos-0 { left: 50%; top: 20%; }
+.bet-pos-1 { left: 70%; top: 25%; }
+.bet-pos-2 { left: 75%; top: 40%; }
+.bet-pos-3 { left: 69%; top: 61%; }
+.bet-pos-4 { left: 50%; top: 72%; }
+.bet-pos-5 { left: 31%; top: 61%; }
+.bet-pos-6 { left: 25%; top: 40%; }
+.bet-pos-7 { left: 30%; top: 25%; }
 
 .bet-chip-pile {
   position: relative;
@@ -536,14 +727,16 @@ input {
 .centered-board {
   position: absolute;
   left: 50%;
-  top: 46%;
-  width: min(100%, 540px);
+  top: 50%;
+  width: min(100%, 430px);
   transform: translate(-50%, -50%);
-  padding: 1rem 1.1rem;
+  padding: 0.9rem 1rem;
+  max-height: min(100%, 340px);
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: var(--panel-strong);
   backdrop-filter: blur(16px);
+  overflow: auto;
   z-index: 2;
 }
 
@@ -556,7 +749,7 @@ input {
 }
 
 .board-header h3 {
-  font-size: 1.7rem;
+  font-size: 1.5rem;
 }
 
 .board-metrics {
@@ -580,7 +773,7 @@ input {
 .card-row {
   display: flex;
   justify-content: center;
-  gap: 0.7rem;
+  gap: 0.55rem;
   flex-wrap: wrap;
 }
 
@@ -593,10 +786,10 @@ input {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  width: 88px;
-  min-width: 88px;
-  height: 126px;
-  padding: 0.86rem 0.86rem 0.74rem;
+  width: 74px;
+  min-width: 74px;
+  height: 108px;
+  padding: 0.72rem 0.72rem 0.62rem;
   border-radius: 18px;
   background: linear-gradient(180deg, #fffefa 0%, #f1eddd 100%);
   color: #0e1815;
@@ -605,10 +798,10 @@ input {
 }
 
 .playing-card.is-compact {
-  width: 46px;
-  min-width: 46px;
-  height: 66px;
-  padding: 0.42rem;
+  width: 42px;
+  min-width: 42px;
+  height: 60px;
+  padding: 0.38rem;
   border-radius: 12px;
 }
 
@@ -638,14 +831,14 @@ input {
 }
 
 .card-rank {
-  font-size: 1.4rem;
+  font-size: 1.15rem;
   font-weight: 800;
   line-height: 1;
 }
 
 .card-suit {
   align-self: flex-end;
-  font-size: 2rem;
+  font-size: 1.6rem;
   line-height: 1;
 }
 
@@ -665,7 +858,7 @@ input {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
   margin-top: 0.85rem;
-  max-height: 180px;
+  max-height: 150px;
   overflow: auto;
 }
 
@@ -695,21 +888,27 @@ input {
 }
 
 .action-dock {
-  position: absolute;
-  left: 50%;
-  bottom: 0.9rem;
-  width: min(100% - 2rem, 920px);
+  position: relative;
+  width: min(100%, 860px);
+  margin: 0 auto;
   display: grid;
   grid-template-columns: 290px 1fr;
   gap: 0.85rem;
   padding: 0.95rem;
   border-radius: 26px;
-  transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(5, 15, 12, 0.88);
   backdrop-filter: blur(18px);
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
   z-index: 4;
+}
+
+.table-middle.is-player-layout .centered-board {
+  width: min(100%, 460px);
+}
+
+.table-middle.is-player-layout .right-side {
+  display: none;
 }
 
 .dock-hand,
@@ -808,6 +1007,10 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .history-shell {
+    bottom: 12rem;
+  }
+
   .table-side {
     position: static;
     width: auto;
@@ -820,13 +1023,17 @@ input {
   }
 
   .centered-board {
-    top: 44%;
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
     width: min(100% - 2rem, 620px);
+    margin: 0 auto;
   }
 
   .action-dock {
     grid-template-columns: 1fr;
-    width: calc(100% - 1.6rem);
+    width: calc(100% - 0.4rem);
   }
 }
 
@@ -848,23 +1055,23 @@ input {
     min-height: 108px;
   }
 
-  .seat-pos-0 { left: 50%; top: 13%; }
-  .seat-pos-1 { left: 78%; top: 21%; }
-  .seat-pos-2 { left: 88%; top: 38%; }
-  .seat-pos-3 { left: 78%; top: 67%; }
-  .seat-pos-4 { left: 50%; top: 78%; }
-  .seat-pos-5 { left: 22%; top: 67%; }
-  .seat-pos-6 { left: 12%; top: 38%; }
-  .seat-pos-7 { left: 22%; top: 21%; }
+  .seat-pos-0 { left: 50%; top: 9%; }
+  .seat-pos-1 { left: 78%; top: 18%; }
+  .seat-pos-2 { left: 88%; top: 37%; }
+  .seat-pos-3 { left: 78%; top: 69%; }
+  .seat-pos-4 { left: 50%; top: 86%; }
+  .seat-pos-5 { left: 22%; top: 69%; }
+  .seat-pos-6 { left: 12%; top: 37%; }
+  .seat-pos-7 { left: 22%; top: 18%; }
 
-  .bet-pos-0 { left: 50%; top: 25%; }
-  .bet-pos-1 { left: 69%; top: 29%; }
-  .bet-pos-2 { left: 74%; top: 41%; }
-  .bet-pos-3 { left: 67%; top: 57%; }
-  .bet-pos-4 { left: 50%; top: 60%; }
-  .bet-pos-5 { left: 33%; top: 57%; }
-  .bet-pos-6 { left: 26%; top: 41%; }
-  .bet-pos-7 { left: 31%; top: 29%; }
+  .bet-pos-0 { left: 50%; top: 20%; }
+  .bet-pos-1 { left: 69%; top: 25%; }
+  .bet-pos-2 { left: 74%; top: 39%; }
+  .bet-pos-3 { left: 68%; top: 60%; }
+  .bet-pos-4 { left: 50%; top: 69%; }
+  .bet-pos-5 { left: 32%; top: 60%; }
+  .bet-pos-6 { left: 26%; top: 39%; }
+  .bet-pos-7 { left: 31%; top: 25%; }
 }
 
 @media (max-width: 760px) {
@@ -884,8 +1091,8 @@ input {
   }
 
   .centered-board {
-    top: 42%;
     width: calc(100% - 1rem);
+    max-height: none;
     padding: 0.85rem;
   }
 
@@ -895,23 +1102,23 @@ input {
     padding: 0.68rem;
   }
 
-  .seat-pos-0 { left: 50%; top: 10%; }
-  .seat-pos-1 { left: 76%; top: 17%; }
-  .seat-pos-2 { left: 86%; top: 31%; }
-  .seat-pos-3 { left: 76%; top: 69%; }
-  .seat-pos-4 { left: 50%; top: 81%; }
-  .seat-pos-5 { left: 24%; top: 69%; }
-  .seat-pos-6 { left: 14%; top: 31%; }
-  .seat-pos-7 { left: 24%; top: 17%; }
+  .seat-pos-0 { left: 50%; top: 8%; }
+  .seat-pos-1 { left: 76%; top: 15%; }
+  .seat-pos-2 { left: 86%; top: 29%; }
+  .seat-pos-3 { left: 76%; top: 71%; }
+  .seat-pos-4 { left: 50%; top: 85%; }
+  .seat-pos-5 { left: 24%; top: 71%; }
+  .seat-pos-6 { left: 14%; top: 29%; }
+  .seat-pos-7 { left: 24%; top: 15%; }
 
-  .bet-pos-0 { left: 50%; top: 21%; }
-  .bet-pos-1 { left: 67%; top: 25%; }
-  .bet-pos-2 { left: 72%; top: 36%; }
-  .bet-pos-3 { left: 66%; top: 55%; }
-  .bet-pos-4 { left: 50%; top: 58%; }
-  .bet-pos-5 { left: 34%; top: 55%; }
-  .bet-pos-6 { left: 28%; top: 36%; }
-  .bet-pos-7 { left: 33%; top: 25%; }
+  .bet-pos-0 { left: 50%; top: 18%; }
+  .bet-pos-1 { left: 67%; top: 23%; }
+  .bet-pos-2 { left: 72%; top: 34%; }
+  .bet-pos-3 { left: 66%; top: 61%; }
+  .bet-pos-4 { left: 50%; top: 67%; }
+  .bet-pos-5 { left: 34%; top: 61%; }
+  .bet-pos-6 { left: 28%; top: 34%; }
+  .bet-pos-7 { left: 33%; top: 23%; }
 
   .playing-card {
     width: 66px;
@@ -936,8 +1143,27 @@ input {
 
   .result-grid,
   .action-grid,
-  .raise-row {
+  .raise-row,
+  .history-drawer {
     grid-template-columns: 1fr;
+  }
+
+  .history-shell {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 11.5rem;
+    align-items: stretch;
+  }
+
+  .history-drawer {
+    width: 100%;
+    max-height: min(70vh, 680px);
+  }
+
+  .history-list {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    max-height: 180px;
   }
 
   .board-header,

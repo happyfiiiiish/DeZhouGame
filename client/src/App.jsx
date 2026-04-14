@@ -23,17 +23,6 @@ const SEAT_POSITIONS = {
   center: { x: 50, y: 45 },
 };
 
-const BET_POSITIONS = {
-  0: { x: 50, y: 24 },
-  1: { x: 69, y: 28 },
-  2: { x: 75, y: 42 },
-  3: { x: 67, y: 58 },
-  4: { x: 50, y: 62 },
-  5: { x: 33, y: 58 },
-  6: { x: 25, y: 42 },
-  7: { x: 31, y: 28 },
-};
-
 const SUIT_META = {
   S: { symbol: "♠", className: "is-black" },
   C: { symbol: "♣", className: "is-black" },
@@ -62,6 +51,7 @@ const DEFAULT_GAME_STATE = {
   seats: Array.from({ length: 8 }, (_, seat) => ({ seat, occupied: false })),
   resolution: null,
   showdownResults: null,
+  handHistory: [],
   lastAnimation: null,
   actions: {
     canStartHand: false,
@@ -185,6 +175,10 @@ function getStatusText(roomState, gameState, selfSeat) {
 
   if (gameState.roomStatus === "lobby") {
     return "当前还是大厅阶段，玩家可以继续加入。房主点击“开始整场”后，座位会立即锁定。";
+  }
+
+  if (selfSeat?.isEliminated) {
+    return "你已经被淘汰，现在以旁观者身份留桌。你仍可看见场上已公开的牌，但弃牌且未摊牌的手牌会继续隐藏。";
   }
 
   if (gameState.phase === "showdown") {
@@ -377,7 +371,7 @@ function SelfHandPanel({ selfSeat, gameState }) {
   return (
     <div className="dock-hand">
       <div className="dock-section-title">
-        <span>你的手牌</span>
+        <span>{selfSeat?.isEliminated ? "旁观视角" : "你的手牌"}</span>
         <strong>{selfSeat ? `筹码 ${selfSeat.stack}` : "未入座"}</strong>
       </div>
 
@@ -406,14 +400,187 @@ function PlayerRoster({ roomState }) {
     <div className="roster-list">
       {roomState.players.map((player) => (
         <div key={player.id} className="roster-row">
-          <span>{player.name}</span>
-          <span>
-            {player.isHost ? "房主" : `座位 ${player.seat + 1}`}
-            {player.isEliminated ? " · 淘汰" : ""}
-            {player.isSelf ? " · 你" : ""}
-          </span>
+          <div className="roster-main">
+            <strong>{player.name}</strong>
+            <span>
+              {player.isHost ? "房主" : `座位 ${player.seat + 1}`}
+              {player.isEliminated ? " · 淘汰" : ""}
+              {player.isSelf ? " · 你" : ""}
+            </span>
+          </div>
+          <strong className="roster-stack">{player.stack}</strong>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ResultPanel({ gameState }) {
+  if (!gameState.resolution) {
+    return null;
+  }
+
+  return (
+    <section className="result-panel">
+      <div className="result-headline">
+        <p className="eyebrow">本手结果</p>
+        <h3>{gameState.resolution.message}</h3>
+      </div>
+
+      {gameState.showdownResults?.length ? (
+        <div className="result-grid">
+          {gameState.showdownResults.map((result) => (
+            <article
+              key={result.seat}
+              className={`result-entry ${result.isWinner ? "is-winner" : ""}`}
+            >
+              <div className="result-header">
+                <span>{result.name}</span>
+                <strong>{result.handName}</strong>
+              </div>
+
+              <div className="result-row">
+                {result.holeCards.map((cardCode, index) => (
+                  <Card key={`${result.seat}-${cardCode}-${index}`} cardCode={cardCode} compact />
+                ))}
+              </div>
+
+              <div className="result-row">
+                {result.bestCards.map((cardCode, index) => (
+                  <Card
+                    key={`${result.seat}-${cardCode}-best-${index}`}
+                    cardCode={cardCode}
+                    compact
+                    highlight
+                  />
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function HistoryDetail({ entry }) {
+  if (!entry) {
+    return (
+      <div className="history-empty">
+        <strong>还没有牌局记录</strong>
+        <span>等这一手结束后，我们会把结果整理到这里。</span>
+      </div>
+    );
+  }
+
+  const playerMap = new Map(entry.players.map((player) => [player.playerId, player]));
+
+  return (
+    <div className="history-detail">
+      <div className="history-detail-head">
+        <div>
+          <p className="eyebrow">第 {entry.handNumber} 手</p>
+          <h3>{entry.summary}</h3>
+        </div>
+        <strong>总池 {entry.totalPot}</strong>
+      </div>
+
+      <div className="history-board">
+        {entry.board.map((cardCode, index) => (
+          <Card key={`${entry.id}-board-${cardCode}-${index}`} cardCode={cardCode} compact highlight />
+        ))}
+      </div>
+
+      <div className="history-pots">
+        {entry.winners.map((winner) => (
+          <span key={`${entry.id}-winner-${winner.playerId}`} className="metric-pill">
+            {playerMap.get(winner.playerId)?.name ?? "赢家"} +{winner.amount}
+          </span>
+        ))}
+        {entry.potResults.map((pot, index) => (
+          <span key={pot.id ?? `${entry.id}-pot-${index}`} className="mini-badge">
+            {index === 0 ? "主池" : `边池 ${index}`} {pot.amount}
+          </span>
+        ))}
+      </div>
+
+      <div className="history-player-list">
+        {entry.players.map((player) => (
+          <article key={`${entry.id}-${player.playerId}`} className="history-player-card">
+            <div className="history-player-head">
+              <strong>{player.name}</strong>
+              <span className={player.netChips >= 0 ? "history-net is-positive" : "history-net is-negative"}>
+                {player.netChips >= 0 ? `+${player.netChips}` : player.netChips}
+              </span>
+            </div>
+
+            <div className="history-player-meta">
+              <span>{player.folded ? "已弃牌" : player.showedDown ? "已摊牌" : "未摊牌"}</span>
+              <span>{player.handVisible && player.handName ? player.handName : "牌面隐藏"}</span>
+            </div>
+
+            <div className="history-card-row">
+              {player.handVisible ? (
+                player.holeCards.map((cardCode, index) => (
+                  <Card key={`${entry.id}-${player.playerId}-${cardCode}-${index}`} cardCode={cardCode} compact />
+                ))
+              ) : (
+                <span className="history-hidden-pill">已隐藏</span>
+              )}
+            </div>
+
+            {player.handVisible && player.bestCards?.length ? (
+              <div className="history-card-row history-best-row">
+                {player.bestCards.map((cardCode, index) => (
+                  <Card
+                    key={`${entry.id}-${player.playerId}-best-${cardCode}-${index}`}
+                    cardCode={cardCode}
+                    compact
+                    highlight
+                  />
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryDrawer({ handHistory, open, selectedId, onToggle, onSelect }) {
+  const selectedEntry = handHistory.find((entry) => entry.id === selectedId) ?? handHistory[0] ?? null;
+
+  return (
+    <div className={`history-shell ${open ? "is-open" : ""}`}>
+      <button className="history-toggle" type="button" onClick={onToggle}>
+        历史记录
+        <span>{handHistory.length}</span>
+      </button>
+
+      {open ? (
+        <section className="history-drawer floating-panel">
+          <div className="history-list">
+            {handHistory.length ? (
+              handHistory.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={`history-item ${selectedEntry?.id === entry.id ? "is-selected" : ""}`}
+                  onClick={() => onSelect(entry.id)}
+                >
+                  <strong>第 {entry.handNumber} 手</strong>
+                  <span>{entry.summary}</span>
+                </button>
+              ))
+            ) : (
+              <div className="history-empty-list">暂时还没有结束的牌局记录。</div>
+            )}
+          </div>
+
+          <HistoryDetail entry={selectedEntry} />
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -426,6 +593,8 @@ export default function App() {
   const [connectionState, setConnectionState] = useState(socket.connected ? "connected" : "connecting");
   const [errorMessage, setErrorMessage] = useState("");
   const [raiseInput, setRaiseInput] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
 
   useEffect(() => {
     localStorage.setItem(PLAYER_NAME_STORAGE_KEY, playerName.trim());
@@ -527,7 +696,19 @@ export default function App() {
     }
   }, [gameState.actions.canRaise, gameState.minRaiseTo, gameState.maxRaiseTo]);
 
+  useEffect(() => {
+    if (!gameState.handHistory?.length) {
+      setSelectedHistoryId("");
+      return;
+    }
+
+    setSelectedHistoryId((current) =>
+      gameState.handHistory.some((entry) => entry.id === current) ? current : gameState.handHistory[0].id,
+    );
+  }, [gameState.handHistory]);
+
   const selfSeat = gameState.seats.find((seat) => seat.occupied && seat.isSelf) ?? null;
+  const isHost = Boolean(roomState?.self?.isHost);
   const connectionLabel =
     connectionState === "connected"
       ? "已连接"
@@ -663,6 +844,14 @@ export default function App() {
           <ChipAnimationLayer animation={gameState.lastAnimation} />
 
           <div className="table-felt">
+            <HistoryDrawer
+              handHistory={gameState.handHistory}
+              open={historyOpen}
+              selectedId={selectedHistoryId}
+              onToggle={() => setHistoryOpen((current) => !current)}
+              onSelect={setSelectedHistoryId}
+            />
+
             <header className="table-topbar">
               <div className="floating-panel brand-pill">
                 <p className="eyebrow">LAN Hold'em</p>
@@ -682,141 +871,104 @@ export default function App() {
               </div>
             </header>
 
-            <aside className="table-side left-side">
-              <div className="floating-panel side-panel">
-                <div className="panel-head">
-                  <span>桌上玩家</span>
-                  <strong>{roomState.players.length} / 8</strong>
-                </div>
-                <PlayerRoster roomState={roomState} />
-              </div>
-
-              <div className="floating-panel side-panel compact-status">
-                <div className="panel-head">
-                  <span>桌面提示</span>
-                  <strong>{connectionLabel}</strong>
-                </div>
-                <p className="status-copy">{tableStatus}</p>
-              </div>
-            </aside>
-
-            <aside className="table-side right-side">
-              <div className="floating-panel side-panel">
-                <div className="panel-head">
-                  <span>房主操作</span>
-                  <strong>{gameState.isJoinLocked ? "已锁房" : "可加入"}</strong>
-                </div>
-
-                <div className="stacked-buttons">
-                  <button
-                    className="primary-button"
-                    type="button"
-                    disabled={
-                      gameState.roomStatus === "finished"
-                        ? !gameState.actions.canResetMatch
-                        : !gameState.actions.canStartHand
-                    }
-                    onClick={handlePrimaryAction}
-                  >
-                    {controlLabel}
-                  </button>
-
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    disabled={!gameState.actions.canRevealNext}
-                    onClick={handleRevealNext}
-                  >
-                    {revealButtonLabel}
-                  </button>
-                </div>
-
-                {gameState.sidePots.length ? (
-                  <div className="side-pot-list side-pot-compact">
-                    {gameState.sidePots.map((sidePot) => (
-                      <span key={`side-pot-${sidePot.index}`} className="metric-pill">
-                        边池 {sidePot.index} · {sidePot.amount}
-                      </span>
-                    ))}
+            <div className={`table-middle ${isHost ? "is-host-layout" : "is-player-layout"}`}>
+              <aside className="table-side left-side">
+                <div className="floating-panel side-panel">
+                  <div className="panel-head">
+                    <span>桌上玩家</span>
+                    <strong>{roomState.players.length} / 8</strong>
                   </div>
-                ) : null}
-
-                {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
-              </div>
-            </aside>
-
-            <div className="board-zone centered-board">
-              <div className="board-header">
-                <div>
-                  <p className="eyebrow">牌桌中央</p>
-                  <h3>第 {Math.max(gameState.handNumber, 1)} 手</h3>
+                  <PlayerRoster roomState={roomState} />
                 </div>
 
-                <div className="board-metrics">
-                  <span className="phase-badge">{getPhaseLabel(gameState.phase)}</span>
-                </div>
-              </div>
-
-              <div className="card-row board-row">
-                {gameState.board.map((cardCode, index) => (
-                  <Card key={`board-${cardCode}-${index}`} cardCode={cardCode} highlight />
-                ))}
-                {Array.from({ length: Math.max(5 - gameState.board.length, 0) }, (_, index) => (
-                  <Card key={`board-placeholder-${index}`} hidden />
-                ))}
-              </div>
-
-              {gameState.resolution ? (
-                <section className="result-panel">
-                  <div className="result-headline">
-                    <p className="eyebrow">本手结果</p>
-                    <h3>{gameState.resolution.message}</h3>
+                <div className="floating-panel side-panel compact-status">
+                  <div className="panel-head">
+                    <span>桌面提示</span>
+                    <strong>{connectionLabel}</strong>
                   </div>
+                  <p className="status-copy">{tableStatus}</p>
+                  {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+                </div>
+              </aside>
 
-                  {gameState.showdownResults?.length ? (
-                    <div className="result-grid">
-                      {gameState.showdownResults.map((result) => (
-                        <article
-                          key={result.seat}
-                          className={`result-entry ${result.isWinner ? "is-winner" : ""}`}
-                        >
-                          <div className="result-header">
-                            <span>{result.name}</span>
-                            <strong>{result.handName}</strong>
-                          </div>
-
-                          <div className="result-row">
-                            {result.holeCards.map((cardCode, index) => (
-                              <Card key={`${result.seat}-${cardCode}-${index}`} cardCode={cardCode} compact />
-                            ))}
-                          </div>
-
-                          <div className="result-row">
-                            {result.bestCards.map((cardCode, index) => (
-                              <Card
-                                key={`${result.seat}-${cardCode}-best-${index}`}
-                                cardCode={cardCode}
-                                compact
-                                highlight
-                              />
-                            ))}
-                          </div>
-                        </article>
-                      ))}
+              {isHost ? (
+                <aside className="table-side right-side">
+                  <div className="floating-panel side-panel">
+                    <div className="panel-head">
+                      <span>房主操作</span>
+                      <strong>{gameState.isJoinLocked ? "已锁房" : "可加入"}</strong>
                     </div>
-                  ) : null}
-                </section>
+
+                    <div className="stacked-buttons">
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={
+                          gameState.roomStatus === "finished"
+                            ? !gameState.actions.canResetMatch
+                            : !gameState.actions.canStartHand
+                        }
+                        onClick={handlePrimaryAction}
+                      >
+                        {controlLabel}
+                      </button>
+
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={!gameState.actions.canRevealNext}
+                        onClick={handleRevealNext}
+                      >
+                        {revealButtonLabel}
+                      </button>
+                    </div>
+
+                    {gameState.sidePots.length ? (
+                      <div className="side-pot-list side-pot-compact">
+                        {gameState.sidePots.map((sidePot) => (
+                          <span key={`side-pot-${sidePot.index}`} className="metric-pill">
+                            边池 {sidePot.index} · {sidePot.amount}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </aside>
               ) : null}
-            </div>
 
-            <div className="seat-ring">
-              {gameState.seats.map((seat) => (
-                <SeatNode key={`seat-${seat.seat}`} seat={seat} />
-              ))}
+              <div className="board-zone centered-board">
+                <div className="board-header">
+                  <div>
+                    <p className="eyebrow">牌桌中央</p>
+                    <h3>第 {Math.max(gameState.handNumber, 1)} 手</h3>
+                  </div>
 
-              {gameState.seats.map((seat) => (
-                <SeatBetTray key={`bet-${seat.seat}`} seat={seat} />
-              ))}
+                  <div className="board-metrics">
+                    <span className="phase-badge">{getPhaseLabel(gameState.phase)}</span>
+                  </div>
+                </div>
+
+                <div className="card-row board-row">
+                  {gameState.board.map((cardCode, index) => (
+                    <Card key={`board-${cardCode}-${index}`} cardCode={cardCode} highlight />
+                  ))}
+                  {Array.from({ length: Math.max(5 - gameState.board.length, 0) }, (_, index) => (
+                    <Card key={`board-placeholder-${index}`} hidden />
+                  ))}
+                </div>
+
+                <ResultPanel gameState={gameState} />
+              </div>
+
+              <div className="seat-ring">
+                {gameState.seats.map((seat) => (
+                  <SeatNode key={`seat-${seat.seat}`} seat={seat} />
+                ))}
+
+                {gameState.seats.map((seat) => (
+                  <SeatBetTray key={`bet-${seat.seat}`} seat={seat} />
+                ))}
+              </div>
             </div>
 
             <section className="action-dock">
@@ -824,8 +976,8 @@ export default function App() {
 
               <div className="dock-actions">
                 <div className="dock-section-title">
-                  <span>你的行动</span>
-                  <strong>{selfSeat?.isCurrentTurn ? "轮到你" : "等待中"}</strong>
+                  <span>{selfSeat?.isEliminated ? "旁观信息" : "你的行动"}</span>
+                  <strong>{selfSeat?.isCurrentTurn ? "轮到你" : selfSeat?.isEliminated ? "已旁观" : "等待中"}</strong>
                 </div>
 
                 <div className="action-notes">
@@ -843,11 +995,12 @@ export default function App() {
                     value={raiseInput}
                     onChange={(event) => setRaiseInput(event.target.value)}
                     placeholder={gameState.actions.canRaise ? String(gameState.minRaiseTo) : "当前无法加注"}
+                    disabled={selfSeat?.isEliminated}
                   />
                   <button
                     className="secondary-button raise-button"
                     type="button"
-                    disabled={raiseDisabled}
+                    disabled={raiseDisabled || selfSeat?.isEliminated}
                     onClick={handleRaise}
                   >
                     加注
@@ -858,7 +1011,7 @@ export default function App() {
                   <button
                     className="secondary-button action-button"
                     type="button"
-                    disabled={!gameState.actions.canCall}
+                    disabled={!gameState.actions.canCall || selfSeat?.isEliminated}
                     onClick={handleCall}
                   >
                     {gameState.callAmount > 0 ? `过牌 / 跟随 ${gameState.callAmount}` : "过牌 / 跟随"}
@@ -867,7 +1020,7 @@ export default function App() {
                   <button
                     className="danger-button action-button"
                     type="button"
-                    disabled={!gameState.actions.canFold}
+                    disabled={!gameState.actions.canFold || selfSeat?.isEliminated}
                     onClick={handleFold}
                   >
                     弃牌
